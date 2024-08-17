@@ -1,0 +1,737 @@
+//src/routes
+const express = require('express');
+const router = express.Router();
+const path = require('path');
+const bodyParser = require('body-parser');
+const session = require('express-session');
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const passport = require('../config/passport');
+const ensureAuthenticated = require('../middleware/authMiddleware');
+const customerMiddleware = require('../middleware/customerMiddleware');
+const ProductController = require('../controllers/product.controller');
+const AdminController = require('../controllers/admin.controller');
+const CustomerController = require('../controllers/customer.controller');
+const CategoryController = require('../controllers/category.controller');
+const CartController = require('../controllers/cart.controller');
+const OrderController = require('../controllers/order.controller');
+
+
+
+router.use(express.static('./public'));
+
+router.use('/api/v1/product', require('./product'));
+
+// Cấu hình session
+router.use(session({
+    secret: 'your-secret-key',
+    resave: false,
+    saveUninitialized: true,
+    cookie: { secure: false } // Đặt thành true nếu sử dụng HTTPS
+}));
+
+
+
+router.use(bodyParser.urlencoded({ extended: true }));
+router.use(bodyParser.json());
+
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     Post:
+ *       type: object
+ *       required:
+ *         - title
+ *         - content
+ *         - imageUrl
+ *       properties:
+ *         id:
+ *           type: string
+ *           description: The auto-generated id of the post
+ *         title:
+ *           type: string
+ *           description: The title of the post
+ *         content:
+ *           type: string
+ *           description: The content of the post
+ *         imageUrl:
+ *           type: string
+ *           description: The image URL of the post
+ *         author:
+ *           type: string
+ *           description: The user ID of the post author
+ *       example:
+ *         id: d5fE_asz
+ *         title: Sample Post
+ *         content: This is a sample post content.
+ *         imageUrl: http://example.com/image.jpg
+ *         author: 60d5ec49c8f8a27fecd5e827
+ */
+
+/**
+ * @swagger
+ * tags:
+ *   name: Posts
+ *   description: The posts managing API
+ */
+
+/**
+ * @swagger
+ * /auth/google:
+ *   get:
+ *     summary: Xác thực với Google
+ *     description: Khởi động quá trình xác thực với Google.
+ *     responses:
+ *       302:
+ *         description: Chuyển hướng đến trang xác thực của Google
+ */
+
+// Route để khởi động quá trình xác thực với Google
+router.get('/auth/google', passport.authenticate('google', {
+    scope: ['profile', 'email']
+}));
+/**
+ * @swagger
+ * /auth/google/callback:
+ *   get:
+ *     summary: Xử lý callback từ Google
+ *     description: Xử lý callback sau khi người dùng xác thực với Google.
+ *     responses:
+ *       302:
+ *         description: Chuyển hướng về trang chủ sau khi đăng nhập thành công
+ */
+
+// Route để xử lý callback từ Google
+router.get('/auth/google/callback',
+    passport.authenticate('google', { failureRedirect: '/login' }),
+    (req, res) => {
+        res.redirect('/'); // Đăng nhập thành công, chuyển hướng về trang chủ
+    }
+);
+/**
+ * @swagger
+ * /logout:
+ *   get:
+ *     summary: Đăng xuất
+ *     description: Đăng xuất người dùng hiện tại.
+ *     responses:
+ *       302:
+ *         description: Chuyển hướng về trang chủ sau khi đăng xuất
+ */
+
+// Route để đăng xuất
+router.get('/logout', (req, res) => {
+    req.logout();
+    res.redirect('/');
+});
+/**
+ * @swagger
+ * /orders:
+ *   get:
+ *     summary: Xem danh sách đơn hàng
+ *     description: Xem danh sách đơn hàng của người dùng hiện tại.
+ *     responses:
+ *       200:
+ *         description: Danh sách đơn hàng
+ */
+
+
+router.get('/orders', customerMiddleware, async (req, res) => {
+    await OrderController.listOrders(req, res);
+});
+/**
+ * @swagger
+ * /cart/checkout:
+ *   post:
+ *     summary: Thanh toán giỏ hàng
+ *     description: Thực hiện thanh toán giỏ hàng của người dùng.
+ *     responses:
+ *       200:
+ *         description: Thanh toán thành công
+ */
+
+router.post('/cart/checkout', customerMiddleware, async (req, res) => {
+    await CartController.checkout(req, res);
+});
+
+/**
+ * @swagger
+ * /cart/update-quantity:
+ *   post:
+ *     summary: Cập nhật số lượng sản phẩm trong giỏ hàng
+ *     description: Cập nhật số lượng sản phẩm trong giỏ hàng của người dùng.
+ *     responses:
+ *       200:
+ *         description: Cập nhật thành công
+ */
+
+
+router.post('/cart/update-quantity', customerMiddleware, async (req, res) => {
+    await CartController.updateQuantity(req, res);
+});
+
+/**
+ * @swagger
+ * /cart/remove/{productId}:
+ *   post:
+ *     summary: Xóa sản phẩm khỏi giỏ hàng
+ *     description: Xóa sản phẩm khỏi giỏ hàng của người dùng.
+ *     parameters:
+ *       - in: path
+ *         name: productId
+ *         required: true
+ *         description: ID của sản phẩm cần xóa
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Xóa thành công
+ */
+
+
+// Route để xóa sản phẩm khỏi giỏ hàng
+router.post('/cart/remove/:productId', customerMiddleware, async (req, res) => {
+    await CartController.removeFromCart(req, res);   
+});
+/**
+ * @swagger
+ * /cart/add/{productId}:
+ *   post:
+ *     summary: Thêm sản phẩm vào giỏ hàng
+ *     description: Thêm sản phẩm vào giỏ hàng của người dùng.
+ *     parameters:
+ *       - in: path
+ *         name: productId
+ *         required: true
+ *         description: ID của sản phẩm cần thêm
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Thêm thành công
+ */
+
+router.post('/cart/add/:productId', customerMiddleware, CartController.addToCart);
+/**
+ * @swagger
+ * /cart:
+ *   get:
+ *     summary: Hiển thị giỏ hàng
+ *     description: Hiển thị giỏ hàng của người dùng.
+ *     responses:
+ *       200:
+ *         description: Hiển thị giỏ hàng thành công
+ */
+
+// Route để hiển thị trang cart
+router.get('/cart', customerMiddleware, async (req, res) => {
+    const userId = req.session.userId;
+    
+    // Kiểm tra nếu userId không tồn tại trong session
+    if (!userId) {
+        return res.redirect('/login?message=You+need+to+login');
+    }
+    
+    try {
+        const cartView = path.join(__dirname, '../views/cart.ejs');
+        const cart = await CartController.viewCart(userId);
+        res.render(cartView, { user: req.user, cart });
+    } catch (error) {
+        console.error('Error displaying cart:', error);
+        res.status(500).send('Internal Server Error');
+    }
+});
+
+    // Route để render trang filter
+router.get('/filter', customerMiddleware, async (req, res) => {
+    try {
+        const indexView = path.join(__dirname, '../views/filter.ejs');
+        const keyword = req.query.keyword;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 6;
+        const products = await ProductController.filterProducts(req.query);
+        const categories = await CategoryController.getListCategory();
+        res.render(indexView, { data: products, datacate: categories, keyword, user: req.user, page, limit });
+    } catch (error) {
+        console.error('Error rendering filter page:', error);
+        res.status(500).send('Internal Server Error');
+    }
+});
+/**
+ * @swagger
+ * /search:
+ *   get:
+ *     summary: Tìm kiếm sản phẩm
+ *     description: Tìm kiếm sản phẩm theo từ khóa.
+ *     parameters:
+ *       - in: query
+ *         name: keyword
+ *         required: true
+ *         description: Từ khóa tìm kiếm
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Kết quả tìm kiếm
+ */
+
+// Route tìm kiếm sản phẩm
+router.get('/search', customerMiddleware, async (req, res) => {
+    const indexView = path.join(__dirname, '../views/search.ejs');
+    const keyword = req.query.keyword;
+    const page = parseInt(req.query.page) || 1; // Trang hiện tại, mặc định là trang 1
+    const limit = parseInt(req.query.limit) || 6; // Số lượng sản phẩm mỗi trang, mặc định là 10
+    const products = await ProductController.searchProducts(keyword);
+    const categories = await CategoryController.getListCategory();
+    res.render(indexView, { data: products, datacate: categories, keyword,user: req.user, page, limit });   
+});
+
+/**
+ * @swagger
+ * /category/{categoryName}:
+ *   get:
+ *     summary: Hiển thị sản phẩm theo danh mục
+ *     description: Hiển thị các sản phẩm theo danh mục.
+ *     parameters:
+ *       - in: path
+ *         name: categoryName
+ *         required: true
+ *         description: Tên danh mục
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Danh sách sản phẩm theo danh mục
+ */
+
+//category
+router.get('/category/:categoryName', customerMiddleware, async (req, res) => {
+    const indexView = path.join(__dirname, '../views/category.ejs'); 
+    const categoryName = req.params.categoryName;
+    
+    const products = await ProductController.getProductsByCategory(categoryName);
+    
+    const categories = await CategoryController.getListCategory();
+    res.render(indexView, { data: products, datacate: categories, categoryName, user: req.user });
+    
+});
+/**
+ * @swagger
+ * /delete-category/{id}:
+ *   get:
+ *     summary: Xóa danh mục
+ *     description: Xóa danh mục theo ID.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: ID của danh mục cần xóa
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Xóa thành công
+ */
+router.get('/delete-category/:id', CategoryController.deleteCategory);
+/**
+ * @swagger
+ * /update-category/{id}:
+ *   post:
+ *     summary: Cập nhật danh mục
+ *     description: Cập nhật thông tin danh mục theo ID.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: ID của danh mục cần cập nhật
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Cập nhật thành công
+ */
+
+router.post('/update-category/:id', CategoryController.updateCategory);
+/**
+ * @swagger
+ * /admin/update-categories/{id}:
+ *   get:
+ *     summary: Hiển thị trang cập nhật danh mục
+ *     description: Hiển thị trang cập nhật thông tin danh mục theo ID.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: ID của danh mục cần cập nhật
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Hiển thị trang cập nhật danh mục thành công
+ */
+
+router.get('/admin/update-categories/:id', ensureAuthenticated, async (req, res) => {
+    const id = req.params.id; 
+    const indexView = path.join(__dirname, '../views/admin/category.update.ejs');
+    const categories = await CategoryController.getCategory(id);
+    res.render(indexView, { categories, user: req.user });
+});
+/**
+ * @swagger
+ * /admin/users/{userId}/status:
+ *   put:
+ *     summary: Cập nhật trạng thái người dùng
+ *     description: Cập nhật trạng thái của người dùng theo ID.
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         description: ID của người dùng cần cập nhật
+ *         schema:
+ *           type: string
+ *       - in: body
+ *         name: status
+ *         required: true
+ *         description: Trạng thái mới của người dùng
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Cập nhật trạng thái thành công
+ */
+
+// Route để cập nhật trạng thái người dùng
+router.put('/admin/users/:userId/status', ensureAuthenticated, async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { status } = req.body;
+        await CustomerController.updateUserStatus(userId, status);
+        res.json({ message: 'User status updated successfully' });
+    } catch (error) {
+        console.error('Error updating user status:', error);
+        res.status(500).json({ message: 'Failed to update user status' });
+    }
+});
+/**
+ * @swagger
+ * /admin/list-users:
+ *   get:
+ *     summary: Lấy danh sách người dùng
+ *     description: Lấy danh sách tất cả người dùng.
+ *     responses:
+ *       200:
+ *         description: Danh sách người dùng
+ */
+
+// Route để lấy danh sách người dùng
+router.get('/admin/list-users', ensureAuthenticated, async (req, res) => {
+    const indexView = path.join(__dirname, '../views/admin/users.list.ejs');
+    const users = await CustomerController.getListUsers();
+    res.render(indexView, { data: users, user: req.user });
+});
+/**
+ * @swagger
+ * /admin/list-orders:
+ *   get:
+ *     summary: Lấy danh sách đơn hàng
+ *     description: Lấy danh sách tất cả đơn hàng.
+ *     responses:
+ *       200:
+ *         description: Danh sách đơn hàng
+ */
+
+router.get('/admin/list-orders', ensureAuthenticated, async (req, res) => {
+    const indexView = path.join(__dirname, '../views/admin/orders.list.ejs');
+    const orders = await OrderController.getListOrders();
+    res.render(indexView, {data: orders, user: req.user });
+});
+/**
+ * @swagger
+ * /admin/orders/{orderId}/status:
+ *   put:
+ *     summary: Cập nhật trạng thái đơn hàng
+ *     description: Cập nhật trạng thái của đơn hàng theo ID.
+ *     parameters:
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         description: ID của đơn hàng cần cập nhật
+ *         schema:
+ *           type: string
+ *       - in: body
+ *         name: status
+ *         required: true
+ *         description: Trạng thái mới của đơn hàng
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Cập nhật trạng thái đơn hàng thành công
+ */
+
+// Route để cập nhật trạng thái đơn hàng
+router.put('/admin/orders/:orderId/status', ensureAuthenticated, async (req, res) => {
+    try {
+        const { orderId } = req.params;
+        const { status } = req.body;
+        await OrderController.updateOrderStatus(orderId, status);
+        res.json({ message: 'Order status updated successfully' });
+    } catch (error) {
+        res.status(500).json({ message: 'Error updating order status', error });
+    }
+});
+/**
+ * @swagger
+ * /admin/list-category:
+ *   get:
+ *     summary: Lấy danh sách danh mục
+ *     description: Lấy danh sách tất cả danh mục sản phẩm.
+ *     responses:
+ *       200:
+ *         description: Danh sách danh mục sản phẩm
+ */
+
+router.get('/admin/list-category', ensureAuthenticated, async (req, res) => {
+    const indexView = path.join(__dirname, '../views/admin/category.list.ejs');
+    const categories = await CategoryController.getListCategory();
+    res.render(indexView, {data: categories, user: req.user });
+});
+/**
+ * @swagger
+ * /add-category:
+ *   post:
+ *     summary: Thêm danh mục mới
+ *     description: Thêm một danh mục sản phẩm mới.
+ *     responses:
+ *       200:
+ *         description: Thêm danh mục thành công
+ */
+
+router.post('/add-category', async (req, res) => {
+    await CategoryController.createCategory(req, res);  
+});
+/**
+ * @swagger
+ * /admin/add-category:
+ *   get:
+ *     summary: Hiển thị trang thêm danh mục mới
+ *     description: Hiển thị trang để thêm một danh mục sản phẩm mới.
+ *     responses:
+ *       200:
+ *         description: Hiển thị trang thêm danh mục thành công
+ */
+
+
+router.get('/admin/add-category', ensureAuthenticated, (req, res) => {
+    const indexView = path.join(__dirname, '../views/admin/category.add.ejs');
+    res.render(indexView, { user: req.user });
+});
+
+/**
+ * @swagger
+ * /admin/list-product:
+ *   get:
+ *     summary: Lấy danh sách sản phẩm
+ *     description: Lấy danh sách tất cả sản phẩm.
+ *     responses:
+ *       200:
+ *         description: Danh sách sản phẩm
+ */
+
+// Sử dụng middleware ensureAuthenticated cho các route admin
+router.get('/admin/list-product', ensureAuthenticated, async (req, res) => {
+    const indexView = path.join(__dirname, '../views/admin/products.list.ejs');
+    const products = await ProductController.getListProduct();
+    res.render(indexView, { data: products, user: req.user });
+});
+/**
+ * @swagger
+ * /admin/add-product:
+ *   get:
+ *     summary: Hiển thị trang thêm sản phẩm mới
+ *     description: Hiển thị trang để thêm một sản phẩm mới.
+ *     responses:
+ *       200:
+ *         description: Hiển thị trang thêm sản phẩm thành công
+ */
+
+router.get('/admin/add-product', ensureAuthenticated, async (req, res) => {
+    const indexView = path.join(__dirname, '../views/admin/products.add.ejs');
+    const categories = await CategoryController.getListCategory();
+    res.render(indexView, { datacate: categories, user: req.user });
+});
+
+
+// Route để thêm sản phẩm mới
+router.post('/admin/add-product', ProductController.upload.fields([
+    { name: 'images', maxCount: 5 }
+]), async (req, res) => {
+    await ProductController.createProduct(req, res);
+});
+/**
+ * @swagger
+ * /admin/update-products/{id}:
+ *   get:
+ *     summary: Hiển thị trang cập nhật sản phẩm
+ *     description: Hiển thị trang cập nhật thông tin sản phẩm theo ID.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: ID của sản phẩm cần cập nhật
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Hiển thị trang cập nhật sản phẩm thành công
+ */
+router.get('/admin/update-products/:id', ensureAuthenticated, async (req, res) => {
+    const id = req.params.id;
+    const indexView = path.join(__dirname, '../views/admin/products.update.ejs');
+    const products = await ProductController.getProduct(id);
+    const categories = await CategoryController.getListCategory();
+    res.render(indexView, {datacate: categories, products, user: req.user });
+});
+// Route để cập nhật sản phẩm
+router.post('/admin/update-products/:id', ProductController.upload.fields([
+    { name: 'images', maxCount: 5 }
+]), async (req, res) => {
+    await ProductController.updateProduct(req, res);
+});
+
+/**
+ * @swagger
+ * /customer-logout:
+ *   get:
+ *     summary: Đăng xuất khách hàng
+ *     description: Đăng xuất khách hàng hiện tại.
+ *     responses:
+ *       200:
+ *         description: Đăng xuất thành công
+ */
+
+router.get('/customer-logout', async (req, res) => {
+    await CustomerController.logout(req, res);
+});
+
+// Route để xử lý đăng ký
+router.post('/customer-register', async (req, res) => {
+    await CustomerController.register(req, res);  
+});
+/**
+ * @swagger
+ * /login:
+ *   get:
+ *     summary: Hiển thị trang đăng nhập
+ *     description: Hiển thị trang đăng nhập cho khách hàng.
+ *     responses:
+ *       200:
+ *         description: Hiển thị trang đăng nhập thành công
+ */
+
+
+
+// Route để hiển thị trang đăng nhập
+router.get('/login', (req, res) => {
+    const loginView = path.join(__dirname, '../views/login.ejs');
+    res.render(loginView);
+});
+/**
+ * @swagger
+ * /customer-login:
+ *   post:
+ *     summary: Xử lý đăng nhập khách hàng
+ *     description: Xử lý đăng nhập cho khách hàng.
+ *     responses:
+ *       200:
+ *         description: Đăng nhập thành công
+ */
+
+
+// Route để xử lý đăng nhập
+router.post('/customer-login', async (req, res) => {
+    await CustomerController.login(req, res);   
+});
+/**
+ * @swagger
+ * /admin-logout:
+ *   get:
+ *     summary: Đăng xuất admin
+ *     description: Đăng xuất admin hiện tại.
+ *     responses:
+ *       200:
+ *         description: Đăng xuất thành công
+ */
+
+
+router.get('/admin-logout', async (req, res) => {
+    await AdminController.logout(req, res);
+});
+/**
+ * @swagger
+ * /admin/login:
+ *   get:
+ *     summary: Hiển thị trang đăng nhập admin
+ *     description: Hiển thị trang đăng nhập cho admin.
+ *     responses:
+ *       200:
+ *         description: Hiển thị trang đăng nhập thành công
+ */
+
+
+
+// Route để hiển thị trang đăng nhập
+router.get('/admin/login', (req, res) => {
+    const loginView = path.join(__dirname, '../views/admin/login.ejs');
+    res.render(loginView);
+});
+/**
+ * @swagger
+ * /admin-login:
+ *   post:
+ *     summary: Xử lý đăng nhập admin
+ *     description: Xử lý đăng nhập cho admin.
+ *     responses:
+ *       200:
+ *         description: Đăng nhập thành công
+ */
+
+// Route để xử lý đăng nhập
+router.post('/admin-login', async (req, res) => {
+    await AdminController.login(req, res);   
+});
+
+/**
+ * @swagger
+ * /:
+ *   get:
+ *     summary: Trang chủ
+ *     description: Trả về trang chủ của ứng dụng.
+ *     responses:
+ *       200:
+ *         description: Hiển thị trang chủ thành công
+ */
+
+router.get('/', customerMiddleware, async (req, res) => {
+    const indexView = path.join(__dirname, '../views/index.ejs'); 
+    const page = parseInt(req.query.page) || 1; // Trang hiện tại, mặc định là trang 1
+    const limit = parseInt(req.query.limit) || 6; // Số lượng sản phẩm mỗi trang, mặc định là 10
+
+    const products = await ProductController.getListProduct(page, limit);
+    const categories = await CategoryController.getListCategory();
+    res.render(indexView, { data: products, datacate: categories, user: req.user, page, limit });
+});
+
+
+
+router.get('/details/:id', customerMiddleware,async (req, res) => {
+    const id = req.params.id;
+    const indexView = path.join(__dirname, '../views/product-details.ejs');
+    const product = await ProductController.getProduct(id);    
+    res.render(indexView, { product, user: req.user });
+});
+
+
+
+module.exports = router;
